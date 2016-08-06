@@ -81,6 +81,7 @@ struct linked_list *add_mutation(struct linked_list *head_ptr, double mut_rate, 
 struct linked_list *add_mutation_BurnIn(struct linked_list *head_ptr, double mut_rate, int N, gsl_rng * r, int age, char *type_sel, double sel_mult, double h , double PointSel, int *ListOfAllelesToKeep, int FlagTrajToPrint, FILE *EXITTRAJFILE , int FlagRelaxationSel, double SelThreshold, double NewSelCoef , double ParamOne, double ParamTwo,  double ParamThree, int TypeRelaxedSelection, double *VecSelParamOne, double *VecSelParamTwo, double *VecSelParamThree, int NumberOfSelPars, double SFSBasedAlleleFrequency);
 
 struct linked_list *drift_sel(struct linked_list *head_ptr, int N, gsl_rng * r, double F, int FlagTrajToPrint, int *ListOfAllelesToKeep, FILE *EXITTRAJFILE, FILE *FIXEDSITESFILE, int ShortFlag , int SampleFlag, int ModuloFixedSitesToPrint, int fixed_sitesFlag);
+struct linked_list *drift_sel_keep_fixed(struct linked_list *head_ptr, int N, gsl_rng * r, double F, int FlagTrajToPrint, int *ListOfAllelesToKeep, FILE *EXITTRAJFILE, FILE *FIXEDSITESFILE, int ShortFlag , int SampleFlag, int ModuloFixedSitesToPrint, int fixed_sitesFlag);
 void short_output(struct linked_list *head_ptr, FILE *S_OUT, FILE *NUM_SNP_OUT, FILE *WEIGHT_S_OUT,  FILE *MAF_OUT, FILE *GEN_LOAD, FILE *SFS_OUT, FILE *FULL_OUT, int num, int run, int n, gsl_rng * r, int num_snpFlag , int s_outFlag , int average_mafFlag , int s_weightFlag , int genloadFlag, int sfs_outFlag, int full_outFlag, int SampleFlag);
 void full_output(struct linked_list *head_ptr, FILE *FULL_OUT,  int num, int run);
 void dog_output(struct linked_list *head_ptr, FILE *DOG_OUT,  int num, int run, double F, gsl_rng * r);
@@ -2230,7 +2231,6 @@ char file_out_maf[1000];
 	}
       for (g=0; g<gen[e]; g++)
 	{
-	
 		//now need to figure out the age of the mutation:
 
 		if(e==0)
@@ -2282,7 +2282,11 @@ char file_out_maf[1000];
 //	fprintf(stderr,"Generation:\t%d\n",g);
 //	 fprintf(EXITTRAJFILE,"Age = %d\n",age);
 		ModuloFixedSitesToPrint = g % PrintingInterval;
-	  first_ptr = drift_sel(first_ptr,N_F, r, F_Epochs[e], FlagTrajToPrint, ListOfAllelesToKeep, EXITTRAJFILE, FIXEDSITESFILE, Short,  0, ModuloFixedSitesToPrint, fixed_sitesFlag);
+		if (e == NumberOfEpochs - 1) {
+		  first_ptr = drift_sel_keep_fixed(first_ptr,N_F, r, F_Epochs[e], FlagTrajToPrint, ListOfAllelesToKeep, EXITTRAJFILE, FIXEDSITESFILE, Short,  0, ModuloFixedSitesToPrint, fixed_sitesFlag);
+		} else {
+		  first_ptr = drift_sel(first_ptr,N_F, r, F_Epochs[e], FlagTrajToPrint, ListOfAllelesToKeep, EXITTRAJFILE, FIXEDSITESFILE, Short,  0, ModuloFixedSitesToPrint, fixed_sitesFlag);
+		}
 	if (FlagRelaxationSelection == 1 && e >= EpochOfRelaxation){
 	first_ptr = add_mutation(first_ptr,mut_rate, N_F, r, age, type_sel, sel_mult, h, PointSel, ListOfAllelesToKeep, FlagTrajToPrint, EXITTRAJFILE, FlagRelaxationSelection, SelectionThreshold, NewSelectionCoefficient, DistParamOne, DistParamTwo, DistParamThree, TypeOfRelaxedSelection, VectorSelParamOne , VectorSelParamTwo , VectorSelParamThree, NumberOfSelParameters);	
 	}else{
@@ -2796,6 +2800,177 @@ ArrayCounter = ArrayCounter + 1;
 
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct linked_list *drift_sel_keep_fixed(struct linked_list *head_ptr, int N, gsl_rng * r, double F, int FlagTrajToPrint, int *ListOfAllelesToKeep, FILE *EXITTRAJFILE, FILE *FIXEDSITESFILE, int ShortFlag, int SampleFlag, int ModuloFixedSitesToPrint, int fixed_sitesFlag)
+{
+	int DerivedSitesFixed = 0, ReferenceSitesFixed = 0;
+	double sumfixeds = 0.0;
+  if (head_ptr != NULL)
+    {
+  
+ struct linked_list *lag_current_ptr = head_ptr; //lab_current_ptr will point to the address of the previous node. Initialize to the head ptr
+  struct linked_list *lead_current_ptr; //this is the ptr for the current element.
+  struct linked_list *temp_ptr; //this is a temporary pt a temporary ptrr 
+  double freq_head; //freq of head node
+  double freq; //freq of any node of list other than head
+  int test = 0;
+  double s;
+  double h;
+  int freq_count;
+  unsigned int freq_count_head;
+ int count_use;
+int ArrayIterator, ArrayCounter, MaxArrayNumber;
+int Iterator;
+/* for (ArrayIterator = 0; ArrayIterator < FlagTrajToPrint; ArrayIterator++){
+printf("%d\t%d\n", ArrayIterator, ListOfAllelesToKeep[ArrayIterator]);
+} */
+
+  freq_head = ((*head_ptr).count); //convert count into proportion
+  if (SampleFlag == 1){
+	s = 0.0;
+//	printf("Random sampling works!\n");
+  }else{
+  s = ((*head_ptr).sel_coef);
+  }
+  h = ((*head_ptr).h);
+  //freq_head = (freq_head*freq_head*(1-s)+(freq_head)*(1-freq_head)*(1-(h*s)))/(1-s*freq_head*(2*h*(1-freq_head)+freq_head)); //change freq for selection
+
+	freq_head=(((1.0-s)*(freq_head*freq_head+F*freq_head*(1.0-freq_head)))+((1.0-h*s)*freq_head*(1.0-freq_head)*(1.0-F)))/(((1.0-freq_head)*(1.0-freq_head)+(1.0-freq_head)*F*freq_head)+((1.0-h*s)*2.0*freq_head*(1.0-freq_head)*(1.0-F))+((1.0-s)*(freq_head*freq_head+F*freq_head*(1.0-freq_head)))); //freq change with inbreeding
+
+
+	count_use=(*head_ptr).num;
+//  fprintf(stderr,"count:\t%d\tfreq:\theadprebinom: %f\t", count_use,freq_head);
+
+
+  freq_count_head = gsl_ran_binomial(r, freq_head, N);//do binom sampling
+  freq_head = (double)freq_count_head/(double)N; //turn back to freq
+  (*head_ptr).count= freq_head;
+
+  count_use=(*head_ptr).num;
+   //fprintf(stderr,"freq_head: %f\n", freq_head);
+//  counter=(*current_ptr).num;  Diego's stuff
+	//lag_is_alredy set
+	lead_current_ptr=(*head_ptr).next_ptr;
+	ArrayIterator = FlagTrajToPrint - 1;
+	ArrayCounter = 0;
+//	printf("Current Count = %d %d %d\n",count_use, ListOfAllelesToKeep[ArrayIterator], ArrayIterator);
+// printf("Counter = %d %d %d\n", ArrayCounter, ArrayIterator , ListOfAllelesToKeep[ArrayCounter] );
+
+if (ArrayCounter <= ArrayIterator){
+
+MaxArrayNumber = ArrayIterator;
+for (Iterator = ArrayIterator; Iterator >= 0 ; Iterator--){
+if (ListOfAllelesToKeep[Iterator] <= count_use){
+MaxArrayNumber = Iterator;
+}
+}
+
+//printf("Current Count! = %d %d %d %d %d %d\n",count_use, ListOfAllelesToKeep[ArrayIterator], ArrayIterator, ArrayCounter, MaxArrayNumber , ListOfAllelesToKeep[MaxArrayNumber]);
+if (count_use == ListOfAllelesToKeep[MaxArrayNumber]){
+if (SampleFlag == 0){
+fprintf(EXITTRAJFILE,"%d\t%lf\n", count_use, freq_head); 
+}
+ArrayCounter = ArrayCounter + 1;
+}
+}
+	
+	while(lead_current_ptr != NULL)
+	{
+
+	
+		//do drift and sel:
+		  if (SampleFlag == 1){
+		        s = 0.0;
+		  }else{
+	      s = ((*lead_current_ptr).sel_coef);
+			}
+	      freq = ((*lead_current_ptr).count);
+	      h = ((*lead_current_ptr).h);
+	      count_use=(*lead_current_ptr).num;
+	
+  	//fprintf(stderr,"count:\t%d\tfreq:\tlaterprebinom: %f\t", count_use,freq);
+
+
+		freq=(((1.0-s)*(freq*freq+F*freq*(1.0-freq)))+((1.0-h*s)*freq*(1.0-freq)*(1.0-F)))/(((1.0-freq)*(1.0-freq)+(1.0-freq)*F*freq)+((1.0-h*s)*2.0*freq*(1.0-freq)*(1.0-F))+((1.0-s)*(freq*freq+F*freq*(1.0-freq)))); //freq change with inbreeding
+
+	      freq_count = gsl_ran_binomial(r, freq, N);//do binom sampling
+	      freq = (double)freq_count/(double)N; //turn back to freq
+	      (*lead_current_ptr).count = freq;
+
+   //fprintf(stderr,"freq: %f\n", freq);
+		if(freq>0.0)
+		{
+				if (ArrayCounter <= ArrayIterator){
+					if (count_use == ListOfAllelesToKeep[MaxArrayNumber+ArrayCounter]){
+//						fprintf(EXITTRAJFILE,"%d\t%lf\t%d\t%d\n", count_use, freq , ArrayIterator , ArrayCounter);
+						if (SampleFlag == 0){
+						fprintf(EXITTRAJFILE,"%d\t%lf\n",  count_use, freq);
+						}
+						ArrayCounter = ArrayCounter + 1;
+				}
+			}
+
+			lag_current_ptr=lead_current_ptr; //move up lag ptr
+			lead_current_ptr=(*lag_current_ptr).next_ptr; //move up lead ptr
+		}
+		//case 2: we delete snp
+		else
+		{
+			if (ShortFlag == 1){
+			if (freq == 0.0) {
+					ReferenceSitesFixed++;
+			}
+			}
+
+
+
+			(*lag_current_ptr).next_ptr=(*lead_current_ptr).next_ptr; //this moves teh "next" address on teh previous ptr to point to the next node
+			temp_ptr=lead_current_ptr; //this creates a temp ptr to poitn to the current one
+			lead_current_ptr=(*temp_ptr).next_ptr; //this moves us to the next node
+			free(temp_ptr); //frees the mtuation that has been lost/fixed
+		}//clsoe aroudn else statment to remove monomorphic SNPs
+
+	}//close while loop aroudn all teh nodes after the head node (close while (lead_ptr !=NULL))
+
+}//close if loop around whether head ptr is null or not
+	if (ShortFlag == 1){
+//		ReferenceSitesFixed++;
+//		printf("%d\t%d\n",ReferenceSitesFixed,DerivedSitesFixed);
+			if(fixed_sitesFlag==1 && ModuloFixedSitesToPrint == 0){
+	fprintf(FIXEDSITESFILE,"%d\t%d\t%lf\n",ReferenceSitesFixed,DerivedSitesFixed,sumfixeds);
+			}
+	}
+      return(head_ptr);
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 void full_output(struct linked_list *head_ptr, FILE *FULL_OUT,  int num, int run)
 
 {
@@ -2815,7 +2990,8 @@ struct linked_list *current_ptr;
 	counter=(*current_ptr).num;
 	//fprintf(stderr,"fulL_out:\t%d\t%lf\n",j,pop_freq);
 
-	if(pop_freq<1.0 && pop_freq>0.)
+	// print all derived mutations, including the fixed ones
+	if(pop_freq>0.0)
 	{
 		s_to_print = s / 2;
 		age_to_print = age + 1;
